@@ -6,43 +6,96 @@
 
 ---
 
-## 🚀 Quick Start (5 minutes)
+## 📁 Project Structure
 
-### 1. Clone & Setup
+Top-level layout (important files only):
+
+```bash
+krishi-sarthi/
+├─ main.py                 # FastAPI backend entrypoint (Krishi Saarthi API)
+├─ requirements.txt        # Python backend dependencies
+├─ agents/                 # Domain "agents" used by the conversation engine
+│  ├─ conversation_agent.py   # Central voice-first assistant logic
+│  ├─ listing_agent.py        # Vendor product extraction (Ollama + regex)
+│  ├─ discovery_agent.py      # Consumer search & ranking (Ollama + rules)
+│  ├─ udhar_agent.py          # Udhar (credit) ledger + audit trail
+│  ├─ fallback_agent.py       # SMS / USSD style fallback
+│  ├─ speech_utils.py         # STT (Whisper) + TTS (gTTS Hindi) helpers
+│  └─ utils.py                # JSON I/O, helpers, distance, freshness labels
+├─ data/                   # JSON "database" (created/updated at runtime)
+│  ├─ vendors.json
+│  ├─ consumers.json
+│  ├─ inventory.json
+│  ├─ orders.json
+│  ├─ udhar_ledger.json
+│  └─ pending_udhar.json
+├─ frontend/               # Vite-based web app (npm run dev)
+│  ├─ index.html           # Landing + assistant layout
+│  ├─ style.css            # Green, mobile-style theme
+│  ├─ script.js            # Mic handling, API calls, UI updates
+│  ├─ package.json         # Frontend scripts & devDeps (Vite)
+│  ├─ vite.config.mjs      # Dev server + /api proxy → FastAPI
+│  └─ src/
+│     └─ main.js           # Vite entry importing style.css + script.js
+└─ .env / .env.example     # Backend configuration (Ollama, etc.)
+```
+
+---
+
+## 🚀 How to Run (Backend + Frontend)
+
+### 1. Clone & enter project
+
 ```bash
 git clone <repo-url>
-cd krishi-saarthi
+cd krishi-sarthi
 ```
 
-### 2. Backend Setup
+### 2. Backend setup (FastAPI)
+
 ```bash
-cd backend
 python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+venv\Scripts\activate    # Windows
+# source venv/bin/activate  # macOS / Linux
+
 pip install -r requirements.txt
 
-# Copy and configure environment (API key optional!)
-cp .env.example .env
-# Edit .env and add GEMINI_API_KEY if you have one (works without it too)
+# Environment (Ollama, etc.)
+copy .env.example .env    # Windows
+# cp .env.example .env      # macOS / Linux
+# Then edit .env to point OLLAMA_HOST / OLLAMA_MODEL if needed
 ```
 
-### 3. Run Backend
+### 3. Start backend API
+
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Backend runs at: http://localhost:8000  
-API Docs: http://localhost:8000/docs
+- API base: http://localhost:8000  
+- Docs: http://localhost:8000/docs
 
-### 4. Open Frontend
+### 4. Frontend setup (Vite web app)
+
+In a **new terminal**, from the `frontend/` folder:
+
 ```bash
-# From project root, in a NEW terminal:
 cd frontend
-python -m http.server 3000
-# Then open http://localhost:3000 in Chrome
+npm install
+npm run dev
 ```
 
-> ⚠️ **Use Chrome** for best Web Speech API support. Serve via HTTP server (not file://) for mic permissions.
+- Vite dev server: usually http://localhost:5173/  
+- Proxy is configured so all `/api/*` requests go to `http://localhost:8000`.
+
+### 5. Use the app
+
+1. Open `http://localhost:5173/` in a modern browser (Chrome/Edge).  
+2. On the landing screen, choose **Vendor (विक्रेता)** or **Consumer (ग्राहक)**.  
+3. On the assistant screen, press the big mic button and speak in Hindi.  
+4. The app sends audio to `/api/voice-audio`, and shows:
+    - Your recognized text (`user_text`) under **"आपकी बात"**, and  
+    - Krishi Saarthi’s reply (`reply_text`) under **"सारथी का जवाब"**, plus spoken audio.
 
 ---
 
@@ -81,31 +134,26 @@ python -m http.server 3000
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ High-Level Architecture
+
 ```
-┌─────────────────────────────────────────────────────┐
-│                   FRONTEND (Browser)                 │
-│  Voice Input (Web Speech API) + Text Fallback        │
-│  4 Scenes: Listing | Discovery | Udhar | SMS         │
-└────────────────────┬────────────────────────────────┘
-                     │ REST API (FastAPI)
-┌────────────────────▼────────────────────────────────┐
-│                 BACKEND (FastAPI)                    │
-│                                                      │
-│  ┌─────────────┐  ┌──────────────┐                  │
-│  │ Listing     │  │ Discovery    │                   │
-│  │ Agent       │  │ Agent        │                   │
-│  │ LLM + Regex │  │ LLM + Filter │                   │
-│  └─────────────┘  └──────────────┘                  │
-│                                                      │
-│  ┌─────────────┐  ┌──────────────┐                  │
-│  │ Udhar       │  │ Fallback     │                   │
-│  │ Agent       │  │ Agent        │                   │
-│  │ Audit Trail │  │ SMS / USSD   │                   │
-│  └─────────────┘  └──────────────┘                  │
-│                                                      │
-│  Data: vendors.json | inventory.json | udhar_ledger  │
-└──────────────────────────────────────────────────────┘
+Browser (Vite Web App)
+ ├─ Landing screen: choose Vendor / Consumer
+ └─ Voice assistant screen: mic, bubbles, Hindi text
+    │
+    │  /api/voice-audio  (audio + state)
+    ▼
+FastAPI Backend (main.py)
+ ├─ /api/voice           → text in / text out
+ ├─ /api/voice-audio     → audio in / text + audio out
+ └─ Conversation engine  → agents.conversation_agent.handle_conversation
+    │
+    ├─ ListingAgent      (agents/listing_agent.py)
+    ├─ DiscoveryAgent    (agents/discovery_agent.py)
+    ├─ UdharAgent        (agents/udhar_agent.py)
+    └─ FallbackAgent     (agents/fallback_agent.py)
+    │
+    └─ JSON data in /data (vendors, consumers, inventory, orders, udhar_ledger, pending_udhar)
 ```
 
 ## ✨ Key Technical Highlights
