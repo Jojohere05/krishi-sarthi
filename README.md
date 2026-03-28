@@ -99,40 +99,8 @@ npm run dev
 
 ---
 
-## 🎬 Demo Script (2-3 min)
 
-### Scene 1 — Vendor Lists a Product (30s)
-1. Click **Vendor Listing** tab
-2. Select "Ramesh Patil"
-3. Click 🎤 and say: *"Mere paas 50 kilo tamatar hai, price 25 rupaye kilo, bilkul fresh"*
-4. Click **List Product**
-5. Show extracted structure: product, price, quantity, freshness score
-6. Point out: "Extracted by AI (or Regex Fallback if no API key)"
 
-### Scene 2 — Buyer Finds Best Product (30s)
-1. Click **Buyer Discovery** tab
-2. Select "Anita Rao"
-3. Say or type: *"I want fresh tomatoes near me at cheap price"*
-4. Click **Search Products**
-5. Show ranked results table with freshness badges, distances, vendor names
-6. Point out intent badge: "cheapest / freshest / nearest"
-
-### Scene 3 — Udhar with Audit Trail (60s)
-1. Click **Udhar Ledger** tab
-2. Create udhar: Select vendor, type/speak consumer name "Vijay Kumar", amount 500
-3. Click **Create Udhar** → show transaction ID
-4. Click **Record Payment** with the auto-filled transaction ID
-5. Type Vendor ID `1` → Click **Show Audit Log**
-6. Show immutable audit trail: CREATE event + PAY event with timestamps
-
-### Scene 4 — Offline SMS Fallback (30s)
-1. Click **Offline / SMS** tab
-2. Type `HELP` → show command list
-3. Type `PRICE TOMATO` → show prices from all vendors
-4. Type `UDHAR SITA 300` → create udhar via SMS
-5. Show USSD tree on right side
-
----
 
 ## 🏗️ High-Level Architecture
 
