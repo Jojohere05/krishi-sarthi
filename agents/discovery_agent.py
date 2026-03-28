@@ -1,14 +1,14 @@
 """Discovery Agent – Answers consumer voice queries with ranked nearby products.
 
-The agent prefers a small LLM call for intent
-and keyword extraction but falls back to
-configuration-driven heuristics with simple
-NLU-style matching (no heavy models).
+The agent prefers a small local Ollama LLM call for intent
+and keyword extraction but falls back to configuration-driven
+heuristics with simple NLU-style matching (no heavy models).
 """
 import os
 import re
 import json
 import requests
+import time
 from difflib import get_close_matches
 from dotenv import load_dotenv
 from .utils import (
@@ -20,11 +20,24 @@ from .utils import (
     normalize_freshness,
 )
 
+# Load environment variables from the project root .env when available
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+# Ollama configuration – local LLM, no external API keys
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_MODEL_DISCOVERY = os.getenv("OLLAMA_MODEL_DISCOVERY", os.getenv("OLLAMA_MODEL", "phi3:3.8b-mini"))
 
+_DISCOVERY_CACHE: dict[str, dict] = {}
+
+
+def _extract_json_object(text: str):
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group())
+    except Exception:
+        return None
 
 def _product_vocab() -> list:
     """Combine configured product names with those seen in inventory."""
@@ -68,11 +81,13 @@ def regex_intent_extractor(query: str) -> dict:
 
 
 def llm_intent_extractor(query: str) -> dict:
-    """
-    Use Gemini to extract intent and product keywords from consumer query.
-    """
-    if not GEMINI_API_KEY:
-        raise ValueError("No GEMINI_API_KEY")
+    """Use a local Ollama model to extract intent and product keywords."""
+    if not OLLAMA_MODEL_DISCOVERY:
+        raise ValueError("No OLLAMA_MODEL_DISCOVERY/OLLAMA_MODEL configured")
+
+    cached = _DISCOVERY_CACHE.get(query)
+    if cached is not None:
+        return cached
 
     prompt = f"""You are a rural market assistant. Extract intent and product keywords from this consumer query.
 
@@ -93,24 +108,43 @@ intent meanings:
 Keep keywords as simple English product names (lowercase).
 """
 
+    url = f"{OLLAMA_HOST.rstrip('/')}/api/generate"
     payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 100}
+        "model": OLLAMA_MODEL_DISCOVERY,
+        "prompt": prompt,
+        "format": "json",
+        "stream": False,
     }
 
-    resp = requests.post(
-        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
-        json=payload,
-        timeout=10
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    raw = data['candidates'][0]['content']['parts'][0]['text'].strip()
-    raw = re.sub(r'^```(?:json)?\s*', '', raw)
-    raw = re.sub(r'\s*```$', '', raw)
-    result = json.loads(raw)
-    result['source'] = 'gemini'
-    return result
+    last_error: Exception | None = None
+    for _ in range(2):  # small retry loop on transient issues
+        try:
+            resp = requests.post(url, json=payload, timeout=20)
+            resp.raise_for_status()
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            last_error = e
+            time.sleep(1)
+            continue
+        except Exception as e:
+            last_error = e
+            break
+
+        data = resp.json()
+        raw = str(data.get("response", "")).strip()
+        print("[DiscoveryAgent] RAW LLM RESPONSE:", raw)
+        raw = re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = re.sub(r'\s*```$', '', raw)
+        result = _extract_json_object(raw)
+        if result is None:
+            last_error = Exception("LLM did not return valid JSON")
+            break
+        result['source'] = 'ollama'
+        _DISCOVERY_CACHE[query] = result
+        return result
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Ollama intent extraction failed for discovery model")
 
 
 def search_products(query_text: str, consumer_id: int) -> dict:

@@ -1,6 +1,6 @@
 """Listing Agent – Converts vendor voice/text into a structured product listing.
 
-Primary path uses the Gemini model via a small prompt.
+Primary path uses a local Ollama LLM via a small prompt.
 A lightweight regex / heuristic fallback keeps things
 feasible on low-resource setups but still uses simple
 NLU-style matching rather than hardcoded values.
@@ -9,15 +9,32 @@ import os
 import re
 import json
 import requests
+import time
 from difflib import get_close_matches
 from dotenv import load_dotenv
 
 from .utils import load_json, load_domain_config
 
+# Load environment variables from the project root .env when available
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+# Ollama configuration – local, lightweight, no external API keys needed
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL_LISTING", os.getenv("OLLAMA_MODEL", "phi3:3.8b-mini"))
+
+# Simple in-memory cache so repeated inputs do not
+# trigger repeated LLM calls during the same process.
+_LISTING_CACHE: dict[str, dict] = {}
+
+
+def _extract_json_object(text: str):
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group())
+    except Exception:
+        return None
 
 
 def _domain_lists():
@@ -127,12 +144,20 @@ def regex_parser(text: str) -> dict:
 
 
 def llm_parser(text: str) -> dict:
+    """Use a local Ollama model to extract structured product info.
+
+    Uses a small, efficient model by default (phi3:3.8b-mini)
+    and keeps a simple in-memory cache keyed by the input
+    text. Any error will bubble up so the caller can fall
+    back to regex.
     """
-    Use Gemini Flash to extract structured product info from voice text.
-    Returns dict or raises exception on failure.
-    """
-    if not GEMINI_API_KEY:
-        raise ValueError("No GEMINI_API_KEY set")
+    if not OLLAMA_MODEL:
+        raise ValueError("No OLLAMA_MODEL configured")
+
+    # Return cached result when available
+    cached = _LISTING_CACHE.get(text)
+    if cached is not None:
+        return cached
 
     prompt = f"""You are an agricultural product listing assistant for rural Indian farmers.
 Extract product details from this vendor's voice/text input and return ONLY a JSON object.
@@ -156,27 +181,46 @@ Rules:
 - freshness: 1-5 integer based on context clues
 """
 
+    url = f"{OLLAMA_HOST.rstrip('/')}/api/generate"
     payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 200}
+        "model": OLLAMA_MODEL,
+        "prompt": prompt,
+        "format": "json",  # ask Ollama to format as JSON
+        "stream": False,
     }
 
-    resp = requests.post(
-        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
-        json=payload,
-        timeout=10
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    raw = data['candidates'][0]['content']['parts'][0]['text'].strip()
+    last_error: Exception | None = None
+    # Small retry loop for transient connection issues
+    for _ in range(2):
+        try:
+            resp = requests.post(url, json=payload, timeout=20)
+            resp.raise_for_status()
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            last_error = e
+            time.sleep(1)
+            continue
+        except Exception as e:
+            last_error = e
+            break
 
-    # Strip markdown fences if present
-    raw = re.sub(r'^```(?:json)?\s*', '', raw)
-    raw = re.sub(r'\s*```$', '', raw)
+        data = resp.json()
+        raw = str(data.get("response", "")).strip()
+        print("[ListingAgent] RAW LLM RESPONSE:", raw)
 
-    result = json.loads(raw)
-    result['source'] = 'gemini'
-    return result
+        raw = re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = re.sub(r'\s*```$', '', raw)
+
+        result = _extract_json_object(raw)
+        if result is None:
+            last_error = Exception("LLM did not return valid JSON")
+            break
+        result['source'] = 'ollama'
+        _LISTING_CACHE[text] = result
+        return result
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Ollama call failed for listing model")
 
 
 def extract_product(voice_text: str) -> dict:
