@@ -11,9 +11,14 @@ def _timestamp() -> str:
     return datetime.now().isoformat(timespec='seconds')
 
 
-def create_udhar(vendor_id: int, consumer_name: str, amount: float) -> dict:
-    """
-    Create a new udhar (credit) entry with initial audit log entry.
+def create_udhar(vendor_id: int, consumer_name: str, amount: float, meta: dict | None = None) -> dict:
+    """Create a new udhar (credit) entry with initial audit log entry.
+
+    The optional ``meta`` dict can be used by higher-level
+    conversational flows to attach extra audit information
+    like voice confirmations, created_by, etc. This keeps
+    the core ledger structure stable while allowing richer
+    context.
     """
     ledger = load_json('udhar_ledger.json')
     vendor = get_vendor_by_id(vendor_id)
@@ -38,6 +43,9 @@ def create_udhar(vendor_id: int, consumer_name: str, amount: float) -> dict:
             }
         ]
     }
+
+    if meta:
+        entry.update(meta)
 
     ledger.append(entry)
     save_json('udhar_ledger.json', ledger)

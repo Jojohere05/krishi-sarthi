@@ -25,7 +25,7 @@ load_dotenv()
 
 # Ollama configuration – local LLM, no external API keys
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL_DISCOVERY = os.getenv("OLLAMA_MODEL_DISCOVERY", os.getenv("OLLAMA_MODEL", "phi3:3.8b-mini"))
+OLLAMA_MODEL_DISCOVERY = os.getenv("OLLAMA_MODEL_DISCOVERY", os.getenv("OLLAMA_MODEL", "phi3:latest"))
 
 _DISCOVERY_CACHE: dict[str, dict] = {}
 
@@ -119,7 +119,7 @@ Keep keywords as simple English product names (lowercase).
     last_error: Exception | None = None
     for _ in range(2):  # small retry loop on transient issues
         try:
-            resp = requests.post(url, json=payload, timeout=20)
+            resp = requests.post(url, json=payload, timeout=60)
             resp.raise_for_status()
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
             last_error = e

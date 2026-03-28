@@ -20,7 +20,8 @@ load_dotenv()
 
 # Ollama configuration – local, lightweight, no external API keys needed
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL_LISTING", os.getenv("OLLAMA_MODEL", "phi3:3.8b-mini"))
+# Default to a model that actually exists by default in your Ollama tags
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL_LISTING", os.getenv("OLLAMA_MODEL", "phi3:latest"))
 
 # Simple in-memory cache so repeated inputs do not
 # trigger repeated LLM calls during the same process.
@@ -190,10 +191,12 @@ Rules:
     }
 
     last_error: Exception | None = None
-    # Small retry loop for transient connection issues
+    # Small retry loop for transient connection issues.
+    # First call can be slow while the model loads in memory,
+    # so we allow a generous timeout.
     for _ in range(2):
         try:
-            resp = requests.post(url, json=payload, timeout=20)
+            resp = requests.post(url, json=payload, timeout=60)
             resp.raise_for_status()
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
             last_error = e

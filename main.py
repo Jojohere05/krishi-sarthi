@@ -5,7 +5,7 @@ Multi-agent AI system for rural agricultural commerce.
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 import uvicorn
 
 from agents.listing_agent import extract_product
@@ -13,6 +13,7 @@ from agents.discovery_agent import search_products
 from agents.udhar_agent import create_udhar, pay_udhar, get_audit_log
 from agents.fallback_agent import parse_sms, get_ussd_tree
 from agents.utils import load_json, save_json
+from agents.conversation_agent import handle_conversation
 
 # ──────────────────────────────────────────────
 # App setup
@@ -60,6 +61,14 @@ class SMSRequest(BaseModel):
     message: str
 
 
+class VoiceRequest(BaseModel):
+    user_id: int
+    role: str  # "vendor" or "consumer"
+    voice_text: str
+    language: Optional[str] = "hi"
+    state: Optional[Dict[str, Any]] = None
+
+
 # ──────────────────────────────────────────────
 # Routes
 # ──────────────────────────────────────────────
@@ -72,6 +81,29 @@ def root():
 @app.get("/api/health")
 def health():
     return {"status": "healthy"}
+
+
+@app.post("/api/voice")
+def voice_endpoint(req: VoiceRequest):
+    """Single conversational endpoint for all voice-first flows.
+
+    This behaves like a human assistant: it detects intent, manages
+    multi-step state, and always returns Hindi reply_text suitable
+    for text-to-speech.
+    """
+    result = handle_conversation(
+        user_id=req.user_id,
+        role=req.role,
+        voice_text=req.voice_text,
+        state=req.state or {},
+    )
+    # Ensure minimal contract is always present
+    if "reply_text" not in result:
+        result["reply_text"] = "Mujhe samajh nahi aaya, kripya dobara boliye."
+    result.setdefault("action", None)
+    result.setdefault("data", {})
+    result.setdefault("next_state", {})
+    return result
 
 
 @app.get("/api/vendors")
