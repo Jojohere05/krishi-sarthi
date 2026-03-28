@@ -69,8 +69,14 @@ def euclidean_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> fl
 
 def normalize_freshness(freshness: int) -> str:
     """Convert numeric freshness (1-5) to human-readable string."""
-    labels = {1: "Very Old", 2: "Old", 3: "Average", 4: "Fresh", 5: "Very Fresh"}
-    return labels.get(freshness, "Unknown")
+    labels = {
+        1: "Bahut purana",
+        2: "Purana",
+        3: "Theek-thaak",
+        4: "Taaza",
+        5: "Bahut taaza",
+    }
+    return labels.get(freshness, "Pata nahi")
 
 
 def get_vendor_by_id(vendor_id: int) -> dict:

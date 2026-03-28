@@ -79,7 +79,7 @@ def regex_parser(text: str) -> dict:
     products, units, freshness_keywords = _domain_lists()
 
     # Extract product name (exact or fuzzy against domain vocab)
-    product = "Unknown Product"
+    product = "Product ka naam nahi mila"
     tokens = re.findall(r"[\w']+", text_lower)
 
     # direct contains check first
@@ -88,7 +88,7 @@ def regex_parser(text: str) -> dict:
             product = candidate.capitalize()
             break
 
-    if product == "Unknown Product" and tokens:
+    if product == "Product ka naam nahi mila" and tokens:
         # fuzzy match any token against known products
         for token in tokens:
             matches = get_close_matches(token, products, n=1, cutoff=0.8)

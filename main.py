@@ -2,11 +2,18 @@
 Krishi Saarthi – FastAPI Backend
 Multi-agent AI system for rural agricultural commerce.
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import uvicorn
+import json
+
+from agents.speech_utils import (
+    transcribe_audio_to_text,
+    synthesize_text_to_speech_hi,
+    encode_audio_base64,
+)
 
 from agents.listing_agent import extract_product
 from agents.discovery_agent import search_products
@@ -69,6 +76,20 @@ class VoiceRequest(BaseModel):
     state: Optional[Dict[str, Any]] = None
 
 
+class VoiceAudioResponse(BaseModel):
+    """Response model for audio+text voice conversations.
+
+    This is useful for clients that want both the Hindi text reply
+    (for display) and ready-to-play audio (base64 encoded MP3).
+    """
+
+    reply_text: str
+    action: Optional[str]
+    data: Dict[str, Any]
+    next_state: Dict[str, Any]
+    audio_base64: Optional[str] = None
+
+
 # ──────────────────────────────────────────────
 # Routes
 # ──────────────────────────────────────────────
@@ -106,6 +127,68 @@ def voice_endpoint(req: VoiceRequest):
     return result
 
 
+@app.post("/api/voice-audio", response_model=VoiceAudioResponse)
+async def voice_audio_endpoint(
+    user_id: int = Form(...),
+    role: str = Form(...),  # "vendor" or "consumer"
+    state: str = Form("{}"),  # JSON-encoded state from previous turn
+    language: str = Form("hi"),
+    audio_file: UploadFile = File(...),
+):
+    """Voice + text endpoint.
+
+    - Client sends recorded audio plus user_id, role, and previous state.
+    - Server converts audio to Hindi text, runs the conversation agent,
+      and returns both reply_text and (optionally) TTS audio.
+    """
+    # Read audio bytes
+    audio_bytes = await audio_file.read()
+
+    # Step 1: STT – convert voice to text (Hindi)
+    voice_text = transcribe_audio_to_text(audio_bytes, language=language or "hi")
+    if not voice_text:
+        # If STT is not configured or failed, guide user in Hindi
+        return VoiceAudioResponse(
+            reply_text="Awaz samajh nahi aayi ya STT band hai. Kripya text se message bhejiye.",
+            action="stt_unavailable",
+            data={},
+            next_state={},
+            audio_base64=None,
+        )
+
+    # Parse JSON state safely
+    try:
+        state_obj: Dict[str, Any] = json.loads(state or "{}")
+    except Exception:
+        state_obj = {}
+
+    # Step 2: run main conversation engine (same as /api/voice)
+    conv_result = handle_conversation(
+        user_id=user_id,
+        role=role,
+        voice_text=voice_text,
+        state=state_obj,
+    )
+
+    if "reply_text" not in conv_result:
+        conv_result["reply_text"] = "Mujhe samajh nahi aaya, kripya dobara boliye."
+    conv_result.setdefault("action", None)
+    conv_result.setdefault("data", {})
+    conv_result.setdefault("next_state", {})
+
+    # Step 3: TTS – create Hindi audio for reply (if possible)
+    tts_bytes = synthesize_text_to_speech_hi(conv_result["reply_text"])
+    audio_b64 = encode_audio_base64(tts_bytes) if tts_bytes else None
+
+    return VoiceAudioResponse(
+        reply_text=conv_result["reply_text"],
+        action=conv_result.get("action"),
+        data=conv_result.get("data", {}),
+        next_state=conv_result.get("next_state", {}),
+        audio_base64=audio_b64,
+    )
+
+
 @app.get("/api/vendors")
 def get_vendors():
     """Return list of all vendors."""
@@ -125,7 +208,7 @@ def listing_endpoint(req: ListingRequest):
     Saves the product to inventory.
     """
     if not req.voice_text.strip():
-        raise HTTPException(status_code=400, detail="voice_text cannot be empty")
+        raise HTTPException(status_code=400, detail="voice_text khaali nahi ho sakta, kripya apni baat boliye.")
 
     product = extract_product(req.voice_text)
 
@@ -149,7 +232,7 @@ def listing_endpoint(req: ListingRequest):
         "success": True,
         "extracted": product,
         "saved_item": new_item,
-        "message": f"Product '{new_item['product_name']}' listed successfully!"
+        "message": f"Samaan '{new_item['product_name']}' safalta se jod diya gaya hai."
     }
 
 
@@ -159,7 +242,7 @@ def discovery_endpoint(req: DiscoveryRequest):
     Discovery Agent: Search and rank products based on consumer voice query.
     """
     if not req.query_text.strip():
-        raise HTTPException(status_code=400, detail="query_text cannot be empty")
+        raise HTTPException(status_code=400, detail="query_text khaali nahi ho sakta, kripya apni baat boliye.")
 
     result = search_products(req.query_text, req.consumer_id)
     return result
@@ -171,9 +254,9 @@ def udhar_create_endpoint(req: UdharCreateRequest):
     Udhar Agent: Create a new credit entry with immutable audit trail.
     """
     if req.amount <= 0:
-        raise HTTPException(status_code=400, detail="Amount must be positive")
+        raise HTTPException(status_code=400, detail="Rakam zero se zyada honi chahiye.")
     if not req.consumer_name.strip():
-        raise HTTPException(status_code=400, detail="consumer_name cannot be empty")
+        raise HTTPException(status_code=400, detail="Graahak ka naam khaali nahi ho sakta, kripya naam batayein.")
 
     result = create_udhar(req.vendor_id, req.consumer_name.strip(), req.amount)
     return result
@@ -185,7 +268,7 @@ def udhar_pay_endpoint(req: UdharPayRequest):
     Udhar Agent: Record payment against an udhar transaction.
     """
     if not req.transaction_id.strip():
-        raise HTTPException(status_code=400, detail="transaction_id cannot be empty")
+        raise HTTPException(status_code=400, detail="transaction_id khaali nahi ho sakta, kripya ID batayein.")
 
     result = pay_udhar(req.transaction_id.strip().upper(), req.amount_paid)
     if not result['success']:
@@ -207,7 +290,7 @@ def sms_endpoint(req: SMSRequest):
     Fallback Agent: Parse SMS command and return plain-text response.
     """
     if not req.message.strip():
-        raise HTTPException(status_code=400, detail="message cannot be empty")
+        raise HTTPException(status_code=400, detail="Sandesh khaali nahi ho sakta, kripya apna message likhiye.")
 
     response = parse_sms(req.message)
     return {"input": req.message, "response": response}

@@ -39,7 +39,7 @@ def create_udhar(vendor_id: int, consumer_name: str, amount: float, meta: dict |
             {
                 "action": "CREATE",
                 "timestamp": now,
-                "details": f"Udhar of ₹{amount} created for {consumer_name} by vendor {vendor_name}"
+                "details": f"Vendor {vendor_name} ne {consumer_name} ko ₹{amount} ka udhar diya."
             }
         ]
     }
@@ -53,7 +53,7 @@ def create_udhar(vendor_id: int, consumer_name: str, amount: float, meta: dict |
     return {
         "success": True,
         "transaction_id": txn_id,
-        "message": f"Udhar of ₹{amount} created for {consumer_name}. Transaction ID: {txn_id}",
+        "message": f"₹{amount} ka udhar {consumer_name} ke naam par bana diya gaya hai. Transaction ID: {txn_id}",
         "entry": entry
     }
 
@@ -67,7 +67,7 @@ def pay_udhar(transaction_id: str, amount_paid: float = None) -> dict:
     for txn in ledger:
         if txn['id'] == transaction_id:
             if txn['status'] == 'paid':
-                return {"success": False, "message": f"Transaction {transaction_id} is already fully paid."}
+                return {"success": False, "message": f"Transaction {transaction_id} ka pura bhugtaan pehle hi ho chuka hai."}
 
             now = _timestamp()
             pay_amount = amount_paid if amount_paid else txn['amount']
@@ -75,11 +75,11 @@ def pay_udhar(transaction_id: str, amount_paid: float = None) -> dict:
             # Determine if partial or full
             if pay_amount >= txn['amount']:
                 txn['status'] = 'paid'
-                detail = f"Full payment of ₹{pay_amount} received. Status updated to paid."
+                detail = f"₹{pay_amount} ka pura bhugtaan mil gaya hai. Status 'paid' ho gaya hai."
             else:
                 txn['status'] = 'partial'
                 txn['amount'] = txn['amount'] - pay_amount
-                detail = f"Partial payment of ₹{pay_amount} received. Remaining: ₹{txn['amount']}."
+                detail = f"₹{pay_amount} ka hissaana bhugtaan mil gaya hai. Ab baki ₹{txn['amount']} reh gaya hai."
 
             txn['audit_log'].append({
                 "action": "PAY",
@@ -94,7 +94,7 @@ def pay_udhar(transaction_id: str, amount_paid: float = None) -> dict:
                 "entry": txn
             }
 
-    return {"success": False, "message": f"Transaction ID '{transaction_id}' not found."}
+    return {"success": False, "message": f"Transaction ID '{transaction_id}' nahi mila."}
 
 
 def get_audit_log(vendor_id: int) -> dict:
