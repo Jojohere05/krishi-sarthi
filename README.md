@@ -156,6 +156,61 @@ FastAPI Backend (main.py)
     └─ JSON data in /data (vendors, consumers, inventory, orders, udhar_ledger, pending_udhar)
 ```
 
+---
+
+## 🧭 Product Workflow
+
+This is how a typical session flows end‑to‑end.
+
+### 1. Choose role (landing screen)
+
+1. User opens the web app at `http://localhost:5173/`.
+2. First screen asks: **Continue as Vendor (विक्रेता)** or **Continue as Consumer (ग्राहक)**.
+3. Based on the button they click, the frontend sets the role and opens the voice assistant screen.
+
+### 2. Talk to the assistant (voice + Hindi text)
+
+1. User presses the big mic button and speaks in Hindi.
+2. Frontend records audio → sends it to `POST /api/voice-audio` along with:
+     - `user_id` (demo: 1), `role` (vendor/consumer), and
+     - `state` (previous `next_state` from backend).
+3. Backend (main.py):
+     - Uses `speech_utils.transcribe_audio_to_text` to convert audio → Hindi text (`user_text`).
+     - Passes `user_text` + `state` into `handle_conversation` in `agents/conversation_agent.py`.
+     - That function detects intent, runs the correct flow (vendor or consumer), reads/writes JSON in `/data`, and returns `reply_text`, `action`, `data`, and updated `next_state`.
+     - Backend optionally generates Hindi speech audio from `reply_text` and returns `audio_base64`.
+4. Frontend shows both:
+     - **"आपकी बात"** = `user_text` (what STT heard), and
+     - **"सारथी का जवाब"** = `reply_text` (assistant’s Hindi answer), and plays the audio.
+5. Frontend stores `next_state` and sends it back on the next turn, so multi‑step flows continue naturally.
+
+### 3. Vendor flows (examples)
+
+- **Register shop** → `_vendor_register_shop` in `agents/conversation_agent.py`
+    - Asks for shop name, then what items are sold; writes a new vendor into `data/vendors.json`.
+- **Add product** → `_vendor_add_product`
+    - Asks for product details by voice.
+    - Uses `agents/listing_agent.extract_product` (Ollama + regex) to understand quantity, unit, price, freshness.
+    - Confirms the details in Hindi, then writes a new item into `data/inventory.json`.
+- **View orders** → `_vendor_view_orders`
+    - Reads recent entries from `data/orders.json`.
+    - Speaks and shows which consumer, address, quantity and product were ordered.
+- **Udhar (credit)** → `_vendor_view_udhar`, `_vendor_mark_paid`, `_vendor_create_udhar`
+    - Uses `agents/udhar_agent.py` and `data/udhar_ledger.json` / `data/pending_udhar.json` for creating and managing credit with full audit trail.
+
+### 4. Consumer flows (examples)
+
+- **Register user** → `_consumer_register`
+    - Collects name and address; writes to `data/consumers.json`.
+- **Search + compare vendors** → `_consumer_search_and_prepare_order`
+    - Uses `agents/discovery_agent.search_products` to find matching inventory.
+    - Compares multiple vendors (price, freshness, distance) and lets the user pick one by voice.
+- **Place order** → `_consumer_choose_vendor_and_ask_qty` + `_consumer_place_order`
+    - Asks for quantity, then writes an order into `data/orders.json` linking consumer and vendor.
+- **View / pay udhar** → `_consumer_view_udhar`, `_consumer_pay_udhar`
+    - Reads udhar info from `data/udhar_ledger.json` and pending requests from `data/pending_udhar.json`.
+    - Guides the user through confirming or paying udhar using simple Hindi prompts.
+
 ## ✨ Key Technical Highlights
 
 | Feature | Implementation |
