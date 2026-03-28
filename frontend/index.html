@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Krishi Saarthi</title>
+</head>
+<body>
+	<div class="app-shell">
+		<header class="app-header">
+			<div class="brand-mark">
+				<span class="brand-icon">🌾</span>
+				<div class="brand-text">
+					<h1>Krishi Saarthi</h1>
+					<p>Voice-first rural commerce companion for farmers &amp; consumers</p>
+				</div>
+			</div>
+		</header>
+
+		<main class="app-main">
+			<!-- Step 1: Landing choice (like image 1) -->
+			<section id="landing-screen" class="landing-screen">
+				<div class="landing-hero">
+					<h2>आसान आवाज़ आधारित कृषि साथी</h2>
+					<p>सबसे पहले चुनिए – आप विक्रेता हैं या ग्राहक?</p>
+				</div>
+				<div class="role-choice-grid">
+					<article class="role-card role-card-vendor">
+						<div class="role-card-icon">🏪</div>
+						<h3>विक्रेता के रूप में जारी रखें</h3>
+						<p>अपनी दुकान, माल, रेट और उधार आसानी से संभालें।</p>
+						<button id="start-vendor" class="link-btn">शुरू करें →</button>
+					</article>
+
+					<article class="role-card role-card-consumer">
+						<div class="role-card-icon">🛒</div>
+						<h3>ग्राहक के रूप में जारी रखें</h3>
+						<p>नज़दीकी दुकानों से ताज़ा सामान खोजें और मँगवाएँ।</p>
+						<button id="start-consumer" class="link-btn">शुरू करें →</button>
+					</article>
+				</div>
+			</section>
+
+			<!-- Step 2: Voice assistant screen (theme like image 2) -->
+			<section id="assistant-screen" class="assistant-screen hidden">
+				<section class="conversation-card">
+					<div class="assistant-top">
+						<div class="assistant-title">
+							<p class="assistant-label">कृषि सारथी • Voice Assistant</p>
+							<p class="assistant-sub">बस बोलिए – बाकी काम मैं करूँगा।</p>
+						</div>
+						<div class="role-toggle" id="role-toggle">
+							<button data-role="consumer" class="role-btn active">ग्राहक</button>
+							<button data-role="vendor" class="role-btn">विक्रेता</button>
+						</div>
+					</div>
+
+					<div class="status-row">
+						<span id="status-dot" class="status-dot idle"></span>
+						<span id="status-text">तैयार है। नीचे बटन दबाकर बोलिए।</span>
+					</div>
+
+					<div class="conversation-window" id="conversation-window">
+						<div class="bubble bubble-system">
+							<p>नमस्ते! मैं कृषि सारथी हूँ।
+								<br />
+							आप क्या करना चाहते हैं?
+								<br />
+							उदाहरण: "मुझे आलू खरीदना है" या "नया प्रोडक्ट जोड़ना है"।
+							</p>
+						</div>
+					</div>
+
+					<div class="controls">
+						<button id="record-btn" class="primary-btn">
+							<span class="mic-icon">🎙️</span>
+							<span class="mic-text">बटन दबाकर बोलिए</span>
+						</button>
+
+						<button id="stop-btn" class="secondary-btn hidden">
+							⏹ रिकॉर्डिंग रोकें
+						</button>
+
+						<button id="replay-btn" class="ghost-btn" disabled>
+							🔁 जवाब फिर से सुनें
+						</button>
+					</div>
+
+					<div class="transcript-card">
+						<h2>आपकी बात</h2>
+						<p id="user-text" class="transcript-line placeholder">अभी तक कुछ नहीं बोला गया।</p>
+
+						<h2>सारथी का जवाब</h2>
+						<p id="bot-text" class="transcript-line placeholder">जवाब यहाँ दिखेगा।</p>
+					</div>
+				</section>
+			</section>
+		</main>
+
+		<footer class="app-footer">
+			<small>कम नेटवर्क और कम पढ़े–लिखे उपयोगकर्ताओं के लिए बनाया गया। सिर्फ आवाज़ से चलने वाला साथी।</small>
+		</footer>
+	</div>
+
+	<script type="module" src="/src/main.js"></script>
+</body>
+</html>
+

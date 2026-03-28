@@ -4,6 +4,7 @@ Multi-agent AI system for rural agricultural commerce.
 """
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import uvicorn
@@ -38,6 +39,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve frontend (web app) from /app
+app.mount("/app", StaticFiles(directory="frontend", html=True), name="frontend")
 
 
 # ──────────────────────────────────────────────
@@ -84,6 +88,7 @@ class VoiceAudioResponse(BaseModel):
     """
 
     reply_text: str
+    user_text: Optional[str] = None
     action: Optional[str]
     data: Dict[str, Any]
     next_state: Dict[str, Any]
@@ -150,6 +155,7 @@ async def voice_audio_endpoint(
         # If STT is not configured or failed, guide user in Hindi
         return VoiceAudioResponse(
             reply_text="Awaz samajh nahi aayi ya STT band hai. Kripya text se message bhejiye.",
+            user_text=None,
             action="stt_unavailable",
             data={},
             next_state={},
@@ -182,6 +188,7 @@ async def voice_audio_endpoint(
 
     return VoiceAudioResponse(
         reply_text=conv_result["reply_text"],
+        user_text=voice_text,
         action=conv_result.get("action"),
         data=conv_result.get("data", {}),
         next_state=conv_result.get("next_state", {}),
