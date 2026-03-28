@@ -1,9 +1,56 @@
-"""
-Fallback Agent – Simulates SMS/USSD channel for offline rural users.
+"""Fallback Agent – Simulates SMS/USSD channel for offline rural users.
+
 Parses simple text commands and routes to internal functions.
+Command words are looked up from configuration and
+matched with a tiny fuzzy layer so we are not tied
+to hardcoded keywords.
 """
-from .utils import load_json, get_vendor_by_id, normalize_freshness
+import os
+from difflib import get_close_matches
+
+from .utils import load_json, load_domain_config, get_vendor_by_id, normalize_freshness
 from .udhar_agent import create_udhar, pay_udhar
+
+
+DEFAULT_VENDOR_ID = int(os.getenv("SMS_DEFAULT_VENDOR_ID", "1"))
+
+
+def _command_map() -> dict:
+    """Return configured SMS commands from domain config.
+
+    The structure is {canonical: [alias1, alias2, ...]}.
+    """
+    cfg = load_domain_config()
+    return cfg.get("sms_commands", {})
+
+
+def _normalise_command(token: str) -> str | None:
+    """Map an incoming token to a canonical command using aliases + fuzzy match."""
+    token = token.upper()
+    if not token:
+        return None
+
+    commands = _command_map()
+    # direct alias hit
+    for canonical, aliases in commands.items():
+        if token == canonical or token in (a.upper() for a in aliases):
+            return canonical
+
+    # fuzzy match against all known aliases if no direct hit
+    all_aliases: list[str] = []
+    alias_to_canonical: dict[str, str] = {}
+    for canonical, aliases in commands.items():
+        for a in aliases:
+            upper = a.upper()
+            all_aliases.append(upper)
+            alias_to_canonical[upper] = canonical
+
+    if all_aliases:
+        match = get_close_matches(token, all_aliases, n=1, cutoff=0.8)
+        if match:
+            return alias_to_canonical.get(match[0])
+
+    return None
 
 
 def parse_sms(sms_text: str) -> str:
@@ -18,13 +65,16 @@ def parse_sms(sms_text: str) -> str:
       LIST                         → List all available products
       HELP                         → Show command list
     """
-    text = sms_text.strip().upper()
+    text = sms_text.strip()
     parts = text.split()
 
     if not parts:
         return "Empty message. Send HELP for commands."
 
-    cmd = parts[0]
+    cmd = _normalise_command(parts[0])
+
+    if not cmd:
+        return f"Unknown command: '{parts[0]}'. Send HELP for list of commands."
 
     # ── HELP ──
     if cmd == "HELP":
@@ -89,7 +139,7 @@ def parse_sms(sms_text: str) -> str:
             amount = float(parts[2])
         except ValueError:
             return "Invalid amount. Example: UDHAR RAM 500"
-        result = create_udhar(vendor_id=1, consumer_name=name, amount=amount)
+        result = create_udhar(vendor_id=DEFAULT_VENDOR_ID, consumer_name=name, amount=amount)
         if result['success']:
             return f"Udhar created!\nID: {result['transaction_id']}\nFor: {name}\nAmount: ₹{amount}\nSave this ID to pay later."
         return f"Error: {result['message']}"

@@ -1,35 +1,59 @@
-"""
-Discovery Agent – Answers consumer voice queries with ranked nearby products.
-Uses LLM to understand intent + keyword extraction, then filters inventory.
+"""Discovery Agent – Answers consumer voice queries with ranked nearby products.
+
+The agent prefers a small LLM call for intent
+and keyword extraction but falls back to
+configuration-driven heuristics with simple
+NLU-style matching (no heavy models).
 """
 import os
 import re
 import json
 import requests
+from difflib import get_close_matches
 from dotenv import load_dotenv
-from .utils import load_json, get_consumer_by_id, get_vendor_by_id, euclidean_distance, normalize_freshness
+from .utils import (
+    load_json,
+    load_domain_config,
+    get_consumer_by_id,
+    get_vendor_by_id,
+    euclidean_distance,
+    normalize_freshness,
+)
 
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
-KNOWN_PRODUCTS = [
-    'tomato', 'onion', 'potato', 'spinach', 'cauliflower', 'brinjal',
-    'cabbage', 'carrot', 'peas', 'garlic', 'ginger', 'chilli', 'coriander',
-    'mint', 'banana', 'mango', 'apple', 'wheat', 'rice', 'dal', 'corn'
-]
+
+def _product_vocab() -> list:
+    """Combine configured product names with those seen in inventory."""
+    cfg = load_domain_config()
+    config_products = [p.lower() for p in cfg.get("known_products", [])]
+    inventory = load_json('inventory.json')
+    inventory_products = {str(i.get('product_name', '')).lower() for i in inventory if i.get('product_name')}
+    return list({*config_products, *inventory_products})
 
 
 def regex_intent_extractor(query: str) -> dict:
-    """
-    Fallback: extract keywords from query using regex/keyword matching.
-    """
+    """Fallback: extract keywords from query using regex and fuzzy matching."""
     query_lower = query.lower()
-    keywords = []
-    for p in KNOWN_PRODUCTS:
-        if p in query_lower:
+    vocab = _product_vocab()
+    keywords: list[str] = []
+
+    # direct substring matches
+    for p in vocab:
+        if p and p in query_lower:
             keywords.append(p)
+
+    # try fuzzy match on individual tokens if nothing obvious
+    if not keywords:
+        tokens = re.findall(r"[\w']+", query_lower)
+        for token in tokens:
+            matches = get_close_matches(token, vocab, n=1, cutoff=0.8)
+            if matches:
+                keywords.append(matches[0])
+                break
 
     # Determine intent
     intent = "search"
@@ -104,11 +128,12 @@ def search_products(query_text: str, consumer_id: int) -> dict:
     keywords = intent_data.get("keywords", [])
     intent = intent_data.get("intent", "search")
 
-    # If no keywords found, try direct text matching
+    # If no keywords found, try direct text matching against vocab
     if not keywords:
         query_lower = query_text.lower()
-        for p in KNOWN_PRODUCTS:
-            if p in query_lower:
+        vocab = _product_vocab()
+        for p in vocab:
+            if p and p in query_lower:
                 keywords.append(p)
 
     # Load data

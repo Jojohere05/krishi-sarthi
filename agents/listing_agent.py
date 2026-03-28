@@ -1,53 +1,82 @@
-"""
-Listing Agent – Converts vendor voice/text into a structured product listing.
-Uses LLM (Gemini) with a regex fallback.
+"""Listing Agent – Converts vendor voice/text into a structured product listing.
+
+Primary path uses the Gemini model via a small prompt.
+A lightweight regex / heuristic fallback keeps things
+feasible on low-resource setups but still uses simple
+NLU-style matching rather than hardcoded values.
 """
 import os
 import re
 import json
 import requests
+from difflib import get_close_matches
 from dotenv import load_dotenv
+
+from .utils import load_json, load_domain_config
 
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
-# ──────────────────────────────────────────────
-# Regex fallback parser
-# ──────────────────────────────────────────────
-UNIT_PATTERNS = ['kg', 'gram', 'grams', 'g', 'litre', 'liter', 'l', 'piece',
-                 'pieces', 'bunch', 'bunches', 'dozen', 'dozens', 'quintal']
 
-FRESHNESS_KEYWORDS = {
-    5: ['very fresh', 'just picked', 'just harvested', 'aaj ka', 'fresh today', 'bilkul fresh'],
-    4: ['fresh', 'kal ka', 'yesterday', 'good'],
-    3: ['average', 'normal', 'okay', 'theek hai'],
-    2: ['old', 'purana', 'not fresh'],
-    1: ['very old', 'bahut purana', 'stale']
-}
+def _domain_lists():
+    """Return domain vocab lists from config and data.
 
-KNOWN_VEGETABLES = [
-    'tomato', 'tomatoes', 'onion', 'onions', 'potato', 'potatoes', 'spinach',
-    'cauliflower', 'brinjal', 'cabbage', 'carrot', 'peas', 'garlic', 'ginger',
-    'chilli', 'chili', 'coriander', 'mint', 'banana', 'mango', 'apple', 'grape',
-    'wheat', 'rice', 'dal', 'lentil', 'corn', 'maize'
-]
+    This function merges configured products/units with
+    any product names already present in inventory so the
+    system can adapt without code changes.
+    """
+    cfg = load_domain_config()
+    config_products = [p.lower() for p in cfg.get("known_products", [])]
+    units = [u.lower() for u in cfg.get("unit_patterns", [])]
+
+    # Enrich product names from existing inventory
+    inventory = load_json('inventory.json')
+    inventory_products = {str(i.get('product_name', '')).lower() for i in inventory if i.get('product_name')}
+
+    products = list({*config_products, *inventory_products})
+
+    # Freshness keywords are keyed by score as strings in config
+    freshness_keywords_cfg = cfg.get("freshness_keywords", {})
+    freshness_keywords = {}
+    for score_str, words in freshness_keywords_cfg.items():
+        try:
+            score = int(score_str)
+        except ValueError:
+            continue
+        freshness_keywords[score] = [w.lower() for w in words]
+
+    return products, units, freshness_keywords
 
 
 def regex_parser(text: str) -> dict:
-    """
-    Fallback regex parser when LLM is unavailable.
-    Extracts product, quantity, unit, price, freshness from natural language.
+    """Fallback parser when LLM is unavailable.
+
+    Uses regex plus simple NLP-ish heuristics and
+    configuration-driven vocab to extract product,
+    quantity, unit, price and freshness.
     """
     text_lower = text.lower()
+    products, units, freshness_keywords = _domain_lists()
 
-    # Extract product name
+    # Extract product name (exact or fuzzy against domain vocab)
     product = "Unknown Product"
-    for veg in KNOWN_VEGETABLES:
-        if veg in text_lower:
-            product = veg.capitalize()
+    tokens = re.findall(r"[\w']+", text_lower)
+
+    # direct contains check first
+    for candidate in products:
+        if candidate and candidate in text_lower:
+            product = candidate.capitalize()
             break
+
+    if product == "Unknown Product" and tokens:
+        # fuzzy match any token against known products
+        for token in tokens:
+            matches = get_close_matches(token, products, n=1, cutoff=0.8)
+            if matches:
+                product = matches[0].capitalize()
+                break
 
     # Extract price (number followed by rupee keywords or preceded by Rs/₹)
     price = 0
@@ -60,7 +89,10 @@ def regex_parser(text: str) -> dict:
 
     # Extract quantity
     quantity = 0
-    qty_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:' + '|'.join(UNIT_PATTERNS) + r')', text_lower)
+    if units:
+        qty_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:' + '|'.join(units) + r')', text_lower)
+    else:
+        qty_match = None
     if qty_match:
         quantity = float(qty_match.group(1))
     else:
@@ -71,14 +103,14 @@ def regex_parser(text: str) -> dict:
 
     # Extract unit
     unit = "kg"
-    for u in UNIT_PATTERNS:
-        if re.search(r'\b' + u + r'\b', text_lower):
+    for u in units:
+        if re.search(r'\b' + re.escape(u) + r'\b', text_lower):
             unit = u
             break
 
-    # Extract freshness
+    # Extract freshness using configured keyword buckets
     freshness = 4  # default: fresh
-    for score, keywords in FRESHNESS_KEYWORDS.items():
+    for score, keywords in freshness_keywords.items():
         for kw in keywords:
             if kw in text_lower:
                 freshness = score

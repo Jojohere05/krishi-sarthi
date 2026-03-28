@@ -1,0 +1,56 @@
+{
+  "known_products": [
+    "tomato",
+    "onion",
+    "potato",
+    "spinach",
+    "cauliflower",
+    "brinjal",
+    "cabbage",
+    "carrot",
+    "peas",
+    "garlic",
+    "ginger",
+    "chilli",
+    "coriander",
+    "mint",
+    "banana",
+    "mango",
+    "apple",
+    "wheat",
+    "rice",
+    "dal",
+    "corn"
+  ],
+  "unit_patterns": [
+    "kg",
+    "gram",
+    "grams",
+    "g",
+    "litre",
+    "liter",
+    "l",
+    "piece",
+    "pieces",
+    "bunch",
+    "bunches",
+    "dozen",
+    "dozens",
+    "quintal"
+  ],
+  "freshness_keywords": {
+    "5": ["very fresh", "just picked", "just harvested", "aaj ka", "fresh today", "bilkul fresh"],
+    "4": ["fresh", "kal ka", "yesterday", "good"],
+    "3": ["average", "normal", "okay", "theek hai"],
+    "2": ["old", "purana", "not fresh"],
+    "1": ["very old", "bahut purana", "stale"]
+  },
+  "sms_commands": {
+    "HELP": ["HELP", "H", "INFO"],
+    "LIST": ["LIST", "L", "PRODUCTS"],
+    "PRICE": ["PRICE", "P", "RATE"],
+    "BUY": ["BUY", "B", "KHARID"],
+    "UDHAR": ["UDHAR", "U", "CREDIT"],
+    "PAY": ["PAY", "PA", "BHUGTAN"]
+  }
+}
